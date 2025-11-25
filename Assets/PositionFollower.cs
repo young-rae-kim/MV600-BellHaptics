@@ -46,7 +46,7 @@ public class PositionFollower : MonoBehaviour
                     HmdPosDto dto = JsonUtility.FromJson<HmdPosDto>(json);
 
                     // 월드 좌표를 그대로 HumanDummy 위치로 사용
-                    humanDummy.position = new Vector3(dto.x, dto.y, dto.z);
+                    humanDummy.position = new Vector3(dto.x, 0, dto.z);
                 }
                 catch (System.Exception e)
                 {
