@@ -263,6 +263,7 @@ GameObject:
   m_Component:
   - component: {fileID: 269262797}
   - component: {fileID: 269262796}
+  - component: {fileID: 269262798}
   m_Layer: 0
   m_Name: PiezoReader
   m_TagString: Untagged
@@ -285,7 +286,7 @@ MonoBehaviour:
   portName: COM3
   baudRate: 9600
   hitThreshold: 1
-  debounceMs: 200
+  debounceMs: 3000
   useRisingEdge: 1
   movingAverage: 1
 --- !u!4 &269262797
@@ -303,6 +304,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &269262798
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 269262795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 06da6e3238e7eaf48883a857c3337ddc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  piezo: {fileID: 269262796}
+  flaskBaseUrl: http://192.168.0.22:5000
 --- !u!1 &279304490
 GameObject:
   m_ObjectHideFlags: 0
@@ -1026,13 +1041,36 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2033105197973300275, guid: 6206c14b6fb53694cb6b0bb8a41fcb9c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1595016219}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1692468126580653705, guid: 6206c14b6fb53694cb6b0bb8a41fcb9c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 869701345}
   m_SourcePrefab: {fileID: 100100000, guid: 6206c14b6fb53694cb6b0bb8a41fcb9c, type: 3}
 --- !u!4 &869701343 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2033105197973300275, guid: 6206c14b6fb53694cb6b0bb8a41fcb9c, type: 3}
   m_PrefabInstance: {fileID: 869701342}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &869701344 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1692468126580653705, guid: 6206c14b6fb53694cb6b0bb8a41fcb9c, type: 3}
+  m_PrefabInstance: {fileID: 869701342}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &869701345
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 869701344}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0e4bc3ffab955c4ba8651ef00781f17, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  humanDummy: {fileID: 869701343}
+  flaskBaseUrl: http://192.168.0.22:5000
+  pollInterval: 0.05
 --- !u!1 &881094368
 GameObject:
   m_ObjectHideFlags: 0
