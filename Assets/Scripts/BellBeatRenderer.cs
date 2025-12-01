@@ -76,6 +76,16 @@ public class BellBeatRenderer : MonoBehaviour
     [Tooltip("최대 거리 (m) (현재 미사용)")]
     public float maxDistance = 5.0f;
 
+    [Header("Striker Physics (Solid-borne)")]
+    [Tooltip("나무의 파동 속도 (m/s). 참나무류 ~3800m/s. 지연(Delay) 계산용")]
+    public float woodWaveSpeed = 3800f;
+
+    [Tooltip("공간 감쇠 계수 (per meter). 나무는 금속보다 거리에 따른 에너지 손실이 매우 큼.")]
+    public float woodSpatialAlpha = 0.00165f;
+
+    [Tooltip("타격 에너지 전달 효율 (0~1)")]
+    public float impactEfficiency = 1.0f;
+
     // ================= Internal State =================
     // [소스 인덱스][시간 인덱스]에 시간 성분만 저장
     private float[][] temporalBySource;
@@ -185,7 +195,7 @@ public class BellBeatRenderer : MonoBehaviour
     }
 
     /// <summary>
-    /// 2) 사용자 위치 + 시간으로 진폭 조회 (거리/방향 감쇠 포함)
+    /// 사용자 위치 + 시간으로 진폭 조회 (거리/방향 감쇠 포함)
     /// </summary>
     public float GetAmplitudeAt(Vector3 listenerPos, float t, bool useDirectivity = true)
     {
@@ -245,6 +255,30 @@ public class BellBeatRenderer : MonoBehaviour
         return Mathf.Max(0f, sum);
     }
 
+    /// <summary>
+    /// [고체 전달 계수 계산]
+    /// 특정 시간(t)과 거리에서, 당목(나무)이 충격/진동을 얼마나 잘 전달하고 있는지 '비율(0~1)'을 반환합니다.
+    /// 진동 자체를 만드는 게 아니라, 감쇠율(Attenuation Factor)만 계산합니다.
+    /// </summary>
+    public float GetStrikerTransmission(Vector3 impactPos, Vector3 handPos, float t)
+    {
+        // 1. 유효성 체크
+        if (t < 0f) return 0f;
+
+        // 2. 거리 및 지연 계산
+        float distance = Vector3.Distance(impactPos, handPos);
+        float delay = distance / Mathf.Max(1f, woodWaveSpeed);
+
+        // 파동이 아직 손에 도착하지 않았음
+        if (t < delay) return 0f;
+
+        // 3. 거리 감쇠
+        float spaceDecay = Mathf.Exp(-woodSpatialAlpha * distance);
+
+        // (효율) * (거리 감쇠)
+        return impactEfficiency * spaceDecay;
+    }
+
     // ============== Public Utility (Normalization & Mapping) ==============
     public float NormalizeAmplitude(float amp, float maxAmp)
         => (maxAmp > 0f) ? Mathf.Clamp01(amp / maxAmp) : 0f;
@@ -264,7 +298,7 @@ public class BellBeatRenderer : MonoBehaviour
 
     public float EvaluateHaptic01(Vector3 listenerPos, float t, float refMaxAmp, bool useDirectivity)
     {
-        float amp  = GetAmplitudeAt(listenerPos, t, useDirectivity); // ← 거리+방향 감쇠 반영
+        float amp  = GetAmplitudeAt(listenerPos, t, useDirectivity); // 거리+방향 감쇠 반영
         float norm = NormalizeAmplitude(amp, refMaxAmp);
         return Mathf.Clamp01(MapToHapticsLevel(norm));
     }
