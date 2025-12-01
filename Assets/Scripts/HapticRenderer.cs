@@ -4,28 +4,51 @@ using UnityEngine;
 
 public class HapticRenderer : MonoBehaviour
 {
+    public enum HapticDeviceType
+    {
+        Vest,
+        GloveLeft,
+        GloveRight
+    }
+
     [Serializable]
     public class Actuator
     {
+        [Tooltip("이 액추에이터가 속한 장비")]
+        public HapticDeviceType targetDevice = HapticDeviceType.Vest;
+
         [Tooltip("bHaptics 모터 인덱스 (0 ~ motorCount-1)")]
         public int index;
+
         [Tooltip("이 모터의 월드 위치(벨 대비 리스너 위치로 사용)")]
         public Transform transform;
+
         [Tooltip("개별 게인(기본 1)")]
         public float localGain = 1f;
+
+        [Tooltip("체크하면 손으로 간주")]
+        public bool isHand = false; 
     }
 
+    [Header("State Link")]
+    [Tooltip("서버로부터 위치/접촉 정보를 받는 컴포넌트")]
+    public PositionFollower positionFollower;
+
     [Header("Input")]
-    public PiezoReader piezo;                 // ← PiezoReader Drag&Drop
+    public PiezoReader piezo;  
 
     [Header("Bell / Actuators")]
     public BellBeatRenderer bell;
     [Tooltip("사용할 모터들을 인덱스와 함께 등록 (예: 0~39)")]
     public Actuator[] actuators;
 
-    [Header("bHaptics")]
-    public PositionType deviceType = PositionType.Vest; // 장치 타입
-    public int motorCount = 40;                         // Vest=32 등 장치 스펙에 맞게
+    [Header("Target Striker")]
+    public Transform strikerImpactPoint;    
+
+    [Header("Device Settings")]
+    // [변경] 장비별 모터 개수 하드코딩 혹은 설정
+    public int vestMotorCount = 40;
+    public int gloveMotorCount = 6;
 
     [Header("Timing")]
     [Tooltip("한 프레임 전송 간격(초). 0 이면 bell.intervalTime 사용")]
@@ -44,7 +67,7 @@ public class HapticRenderer : MonoBehaviour
     [Header("Hit strength to gain")]
     [Tooltip("PiezoReader.hitThreshold → 0, maxStrength → 1 로 정규화")]
     public bool useHitStrength = false;  
-    public float fixedHitGain   = 1.0f;   
+    public float fixedHitGain = 1.0f;   
     public int maxStrength = 700;
     public float strengthScale = 1.0f;
     public float minHitGain = 0.2f;
@@ -52,6 +75,9 @@ public class HapticRenderer : MonoBehaviour
     [Header("Bell evaluation")]
     [Tooltip("벨 방향성 감쇠 사용 여부 (BellBeatRenderer.GetAmplitudeAt의 인자)")]
     public bool useDirectivity = true;
+
+    [Tooltip("손이 비접촉 상태일 때, 몸통 대비 공기 진동을 얼마나 느낄지 비율 (0.0 ~ 1.0)")]
+    [Range(0f, 1f)] public float handAirMultiplier = 1f;
 
     [Header("Floor shaping")]
     [Tooltip("최종 레벨에서 공통 바닥(0..1)을 감산합니다. 예: 0.15 ~ 0.25")]
@@ -112,7 +138,7 @@ public class HapticRenderer : MonoBehaviour
     {
         if (!bell)
         {
-            Debug.LogError("[HapticRenderer] Bell이 지정되지 않았습니다.");
+            Debug.LogError("[HapticRenderer] BellBeatRenderer가 연결되지 않았습니다.");
             enabled = false; return;
         }
         if (actuators == null || actuators.Length == 0)
@@ -121,6 +147,7 @@ public class HapticRenderer : MonoBehaviour
             enabled = false; return;
         }
 
+        CheckActuatorConfig();
         bell.PrecomputeIfNeeded();
 
         // 전송 간격/총 길이 결정
@@ -138,6 +165,33 @@ public class HapticRenderer : MonoBehaviour
         hitGain = 1f;
 
         if (playOnAwake) StartCoroutine(CoPlayOnAwake());
+    }
+
+    void CheckActuatorConfig()
+    {
+        if (actuators == null || actuators.Length == 0)
+        {
+            Debug.LogError("[HapticRenderer] Actuators 배열이 비어있습니다!");
+            return;
+        }
+
+        int vestCount = 0;
+        int gloveLCount = 0;
+        int gloveRCount = 0;
+
+        foreach (var act in actuators)
+        {
+            if (act.targetDevice == HapticDeviceType.Vest) vestCount++;
+            else if (act.targetDevice == HapticDeviceType.GloveLeft) gloveLCount++;
+            else if (act.targetDevice == HapticDeviceType.GloveRight) gloveRCount++;
+        }
+
+        Debug.Log($"[HapticRenderer] Configured Actuators: Vest={vestCount}, GloveL={gloveLCount}, GloveR={gloveRCount}");
+
+        if (gloveLCount == 0 && gloveRCount == 0)
+        {
+            Debug.LogWarning("⚠️ [HapticRenderer] 장갑(Glove) 액추에이터가 하나도 설정되지 않았습니다. Inspector에서 'Actuators' 리스트를 확인하고 'Target Device'를 GloveLeft/Right로 변경하세요.");
+        }
     }
 
     System.Collections.IEnumerator CoPlayOnAwake()
@@ -175,7 +229,7 @@ public class HapticRenderer : MonoBehaviour
         }
         else
         {
-            hitGain = fixedHitGain;  // ← 세기 무시하고 항상 고정값
+            hitGain = fixedHitGain;  // 세기 무시하고 항상 고정값
         }
         
         refMaxAmp = SampleReferenceMaxAmplitude();
@@ -253,7 +307,12 @@ public class HapticRenderer : MonoBehaviour
     void SendFrame(float t, int durationMs)
     {
         // 모터 강도 버퍼(0..100)
-        int[] config = new int[motorCount];
+        int[] vestConfig  = new int[vestMotorCount];
+        int[] gloveLConfig = new int[gloveMotorCount];
+        int[] gloveRConfig = new int[gloveMotorCount];
+
+        bool isContact = (positionFollower != null) && positionFollower.isContacted;
+        Vector3 impactPos = (strikerImpactPoint != null) ? strikerImpactPoint.position : bell.BellCenter;
 
         // ========== 빌드 단계 ==========
         for (int a = 0; a < actuators.Length; a++)
@@ -261,25 +320,41 @@ public class HapticRenderer : MonoBehaviour
             var act = actuators[a];
             if (act == null) continue;
 
-            int idx = Mathf.Clamp(act.index, 0, motorCount - 1);
-            Vector3 listenerPos = act.transform ? act.transform.position : bell.BellCenter;
+            // 최대 인덱스 보호
+            int maxIdx = (act.targetDevice == HapticDeviceType.Vest) ? vestMotorCount : gloveMotorCount;
+            if (act.index >= maxIdx) continue; // 범위 벗어나면 스킵
 
-            // 0..1 스케일(벨 내부 맵핑) → 추가 게인/세기 반영
-            float base01 = bell.EvaluateHaptic01(listenerPos, t, refMaxAmp, useDirectivity);
-            float level = base01 * gain * act.localGain * hitGain;
-            
-            // ▼ 바닥 감산 적용(순서: 감산/재정규화 → silenceBelow/levelCap)
+            int idx = Mathf.Clamp(act.index, 0, maxIdx - 1);
+            Vector3 listenerPos = act.transform ? act.transform.position : bell.BellCenter;
+            float level;
+
+            // [물리 모델 계산]
+            if (act.isHand && isContact)
+            {
+                // 손 + 접촉 (고체 전파)
+                float sourceVibration = bell.EvaluateHaptic01(impactPos, t, refMaxAmp, false); 
+                float transmission = bell.GetStrikerTransmission(impactPos, listenerPos, t);
+                level = sourceVibration * transmission * hitGain * gain * act.localGain;
+                // Debug.Log($"[HapticRenderer] Hand Contact - Actuator {a} | SourceVib: {sourceVibration:F4}, Transmission: {transmission:F4}, Level: {level:F4}");
+            }
+            else
+            {
+                // 몸통 or 손 비접촉 (공기 전파)
+                float airVibration = bell.EvaluateHaptic01(listenerPos, t, refMaxAmp, useDirectivity);
+                level = airVibration * gain * act.localGain * hitGain;
+                if (act.isHand) level *= handAirMultiplier;
+            }
+
+            // [후처리]
             if (subtractFloor01 > 0f)
             {
                 if (renormalizeAfterCut)
                 {
-                    // Crop+Scale: 남은 범위를 다시 0..1로 펴기
                     float denom = Mathf.Max(1e-6f, 1f - subtractFloor01);
                     level = Mathf.Clamp01((level - subtractFloor01) / denom);
                 }
                 else
                 {
-                    // Cut: 그냥 깎기
                     level = Mathf.Max(0f, level - subtractFloor01);
                 }
             }
@@ -287,47 +362,86 @@ public class HapticRenderer : MonoBehaviour
             if (level < silenceBelow) level = 0f;
             if (level > levelCap)     level = levelCap;
 
-            int intensity01_100 = Mathf.RoundToInt(Mathf.Clamp01(level) * 100f);
-            if (intensity01_100 > config[idx]) config[idx] = intensity01_100; // 같은 인덱스 중 최대값
+            int intensity = Mathf.RoundToInt(Mathf.Clamp01(level) * 100f);
+
+            // [할당]
+            switch (act.targetDevice)
+            {
+                case HapticDeviceType.Vest:
+                    if (intensity > vestConfig[idx]) vestConfig[idx] = intensity;
+                    break;
+                case HapticDeviceType.GloveLeft:
+                    if (intensity > gloveLConfig[idx]) gloveLConfig[idx] = intensity;
+                    break;
+                case HapticDeviceType.GloveRight:
+                    if (intensity > gloveRConfig[idx]) gloveRConfig[idx] = intensity;
+                    break;
+            }
         }
 
         // ========== 디버그 출력 ==========
         if (debugLogs && (Time.frameCount % Mathf.Max(1, logEveryNFrames) == 0))
         {
-            // 요약 정보
-            int nonZero = 0, maxVal = 0, maxIdx = -1;
-            for (int i = 0; i < config.Length; i++)
+            System.Text.StringBuilder sb = new System.Text.StringBuilder(512);
+            sb.Append($"[HapticRenderer] t={t:F2}s ({durationMs}ms) | ");
+
+            // 배열 분석해서 요약 문자열 만들기
+            void AppendDeviceSummary(string name, int[] cfg)
             {
-                int v = config[i];
-                if (v > 0) nonZero++;
-                if (v > maxVal) { maxVal = v; maxIdx = i; }
+                int activeCount = 0;
+                int maxVal = 0;
+                for (int i = 0; i < cfg.Length; i++)
+                {
+                    if (cfg[i] > 0) activeCount++;
+                    if (cfg[i] > maxVal) maxVal = cfg[i];
+                }
+                sb.Append($"{name}: {activeCount}on (max {maxVal}) | ");
             }
 
-            Debug.Log(
-                $"[HapticRenderer] t={t:F2}s, sendStep={stepDt:F2}s, duration={durationMs}ms | " +
-                $"hitGain={hitGain:F2}, gain={gain:F2} | activeMotors={nonZero}/{motorCount}, " +
-                $"max={maxVal} (idx {maxIdx})"
-            );
+            AppendDeviceSummary("Vest", vestConfig);
+            AppendDeviceSummary("GL", gloveLConfig);
+            AppendDeviceSummary("GR", gloveRConfig);
 
-            // 상세(모터별) — 많아질 수 있음
-            if (logActuatorDetails && nonZero > 0)
+            Debug.Log(sb.ToString());
+
+            // 상세(모터별) 출력
+            if (logActuatorDetails) // 변수 선언 필요 (public bool logActuatorDetails = false;)
             {
-                System.Text.StringBuilder sb = new System.Text.StringBuilder(256);
-                sb.Append("[HapticRenderer] config: ");
-                for (int i = 0; i < config.Length; i++)
+                System.Text.StringBuilder detailSb = new System.Text.StringBuilder();
+                
+                // 로컬 함수: 0이 아닌 값만 문자열로 반환
+                string GetActiveStr(string devName, int[] cfg)
                 {
-                    int v = config[i];
-                    if (v > 0)
+                    string s = "";
+                    for (int i = 0; i < cfg.Length; i++)
                     {
-                        sb.Append(i).Append('=').Append(v).Append(' ');
+                        if (cfg[i] > 0) s += $"{i}:{cfg[i]} ";
                     }
+                    if (s.Length > 0) return $"[{devName}] {s} ";
+                    return "";
                 }
-                Debug.Log(sb.ToString());
+
+                detailSb.Append(GetActiveStr("Vest", vestConfig));
+                detailSb.Append(GetActiveStr("GL", gloveLConfig));
+                detailSb.Append(GetActiveStr("GR", gloveRConfig));
+
+                if (detailSb.Length > 0)
+                    Debug.Log("[HapticDetails] " + detailSb.ToString());
             }
         }
 
         // ========== 전송 ==========
-        BhapticsLibrary.PlayMotors((int)deviceType, config, durationMs);
+        // Vest
+        if (vestMotorCount > 0)
+            BhapticsLibrary.PlayMotors((int)PositionType.Vest, vestConfig, durationMs);
+        
+        // Glove Left
+        if (gloveMotorCount > 0)
+            BhapticsLibrary.PlayMotors((int)PositionType.GloveL, gloveLConfig, durationMs);
+
+        // Glove Right
+        if (gloveMotorCount > 0)
+            BhapticsLibrary.PlayMotors((int)PositionType.GloveR, gloveRConfig, durationMs);
     }
 
     float SampleReferenceMaxAmplitude()
