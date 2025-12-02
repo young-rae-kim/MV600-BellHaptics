@@ -154,7 +154,7 @@ public class BellBeatRenderer : MonoBehaviour
     }
 
     /// <summary>
-    /// 1) 시간 성분(Et * M)을 미리 계산해 저장
+    /// 시간 성분(Et * M)을 미리 계산해 저장
     /// </summary>
     private void PrecomputeTemporalOnly()
     {
@@ -298,7 +298,7 @@ public class BellBeatRenderer : MonoBehaviour
 
     public float EvaluateHaptic01(Vector3 listenerPos, float t, float refMaxAmp, bool useDirectivity)
     {
-        float amp  = GetAmplitudeAt(listenerPos, t, useDirectivity); // 거리+방향 감쇠 반영
+        float amp  = GetAmplitudeAt(listenerPos, t, useDirectivity); // 거리 + 방향 감쇠 반영
         float norm = NormalizeAmplitude(amp, refMaxAmp);
         return Mathf.Clamp01(MapToHapticsLevel(norm));
     }

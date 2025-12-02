@@ -115,7 +115,8 @@ public class HapticRenderer : MonoBehaviour
     public bool logActuatorDetails = false;   // 모터별 상세 로그
 
     // -------- 내부 상태 --------
-    private float refMaxAmp = 1f;     // 정규화 기준 (Start에서 샘플링)
+    private float refMaxAmpBody = 1f;
+    private float refMaxAmpHand = 1f;     // 정규화 기준
     private float stepDt = 0.1f;      // 실제 전송 간격
     private float totalPlayable = 0f; // 전체 재생 가능 길이
     private float accum = 0f;
@@ -155,14 +156,19 @@ public class HapticRenderer : MonoBehaviour
         totalPlayable = (playLength > 0f) ? playLength : Mathf.Max(0.1f, bell.preCalculateSeconds);
 
         // 참조 최대 진폭 샘플링(시간 x 액추에이터 위치)
-        refMaxAmp = SampleReferenceMaxAmplitude();
-        if (refMaxAmp <= 0f) refMaxAmp = 1f;
+        refMaxAmpBody = SampleReferenceMaxAmplitudeBody();
+        refMaxAmpHand = SampleReferenceMaxAmplitudeHand();
+        if (refMaxAmpBody <= 0f) refMaxAmpBody = 1f;
+        if (refMaxAmpHand <= 0f) refMaxAmpHand = 1f;
 
         accum = 0f;
         tCursor = 0f;
         isPlaying = false;
         remaining = 0f;
         hitGain = 1f;
+
+        Debug.Log("[HapticRenderer] refMaxAmpBody=" + refMaxAmpBody.ToString("F4") +
+                  ", refMaxAmpHand=" + refMaxAmpHand.ToString("F4"));
 
         if (playOnAwake) StartCoroutine(CoPlayOnAwake());
     }
@@ -190,7 +196,7 @@ public class HapticRenderer : MonoBehaviour
 
         if (gloveLCount == 0 && gloveRCount == 0)
         {
-            Debug.LogWarning("⚠️ [HapticRenderer] 장갑(Glove) 액추에이터가 하나도 설정되지 않았습니다. Inspector에서 'Actuators' 리스트를 확인하고 'Target Device'를 GloveLeft/Right로 변경하세요.");
+            Debug.LogWarning("[HapticRenderer] 장갑(Glove) 액추에이터가 설정되지 않았습니다. Inspector에서 'Actuators' 리스트를 확인하고 'Target Device'를 GloveLeft/Right로 변경하세요.");
         }
     }
 
@@ -232,8 +238,10 @@ public class HapticRenderer : MonoBehaviour
             hitGain = fixedHitGain;  // 세기 무시하고 항상 고정값
         }
         
-        refMaxAmp = SampleReferenceMaxAmplitude();
-        if (refMaxAmp <= 0f) refMaxAmp = 1f;
+        refMaxAmpBody = SampleReferenceMaxAmplitudeBody();
+        refMaxAmpHand = SampleReferenceMaxAmplitudeHand();
+        if (refMaxAmpBody <= 0f) refMaxAmpBody = 1f;
+        if (refMaxAmpHand <= 0f) refMaxAmpHand = 1f;
 
         if (restartOnNewHit || !isPlaying)
         {
@@ -326,13 +334,14 @@ public class HapticRenderer : MonoBehaviour
 
             int idx = Mathf.Clamp(act.index, 0, maxIdx - 1);
             Vector3 listenerPos = act.transform ? act.transform.position : bell.BellCenter;
+            float refAmp = act.isHand ? refMaxAmpHand : refMaxAmpBody;
             float level;
 
             // [물리 모델 계산]
             if (act.isHand && isContact)
             {
                 // 손 + 접촉 (고체 전파)
-                float sourceVibration = bell.EvaluateHaptic01(impactPos, t, refMaxAmp, false); 
+                float sourceVibration = bell.EvaluateHaptic01(impactPos, t, refMaxAmpHand, false); 
                 float transmission = bell.GetStrikerTransmission(impactPos, listenerPos, t);
                 level = sourceVibration * transmission * hitGain * gain * act.localGain;
                 // Debug.Log($"[HapticRenderer] Hand Contact - Actuator {a} | SourceVib: {sourceVibration:F4}, Transmission: {transmission:F4}, Level: {level:F4}");
@@ -340,9 +349,10 @@ public class HapticRenderer : MonoBehaviour
             else
             {
                 // 몸통 or 손 비접촉 (공기 전파)
-                float airVibration = bell.EvaluateHaptic01(listenerPos, t, refMaxAmp, useDirectivity);
+                float airVibration = bell.EvaluateHaptic01(listenerPos, t, refAmp, useDirectivity);
                 level = airVibration * gain * act.localGain * hitGain;
                 if (act.isHand) level *= handAirMultiplier;
+                // Debug.Log($"[HapticRenderer] Air Vibration - Actuator {a} | AirVib: {airVibration:F4}, Level: {level:F4}");
             }
 
             // [후처리]
@@ -444,29 +454,48 @@ public class HapticRenderer : MonoBehaviour
             BhapticsLibrary.PlayMotors((int)PositionType.GloveR, gloveRConfig, durationMs);
     }
 
-    float SampleReferenceMaxAmplitude()
+    private float SampleReferenceMaxAmplitudeBody()
     {
         bell.PrecomputeIfNeeded();
 
-        // 1) 표준 리스너 포인트: 벨 중심에서 한 소스 방향(예: 0°)으로
-        //    "소스 반경 + minDistance"만큼 떨어진 위치를 사용
+        // Vest은 standard listener를 여전히 벨 주변에서 측정
         float angleDeg = (bell.sourceAnglesDeg != null && bell.sourceAnglesDeg.Length > 0)
                         ? bell.sourceAnglesDeg[0] : 0f;
         float rad = angleDeg * Mathf.Deg2Rad;
 
-        // 소스가 있는 수평 원(반지름 = bellRadius)에서 바깥쪽으로 minDistance 만큼 더 떨어진 지점
-        Vector3 outward = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
-        Vector3 standardListener = bell.BellCenter + outward * (bell.bellRadius + bell.minDistance);
+        Vector3 outward =
+            new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
 
-        // 2) 시간 전체에서의 최대 진폭을 검색 (방향성 적용 on)
-        int steps = bell.Steps;
-        if (steps <= 0) return 1f;
+        Vector3 standardListener =
+            bell.BellCenter + outward * (bell.bellRadius + bell.minDistance);
 
         float maxAmp = 0f;
+        int steps = bell.Steps;
         for (int k = 0; k < steps; k++)
         {
             float t = bell.StepToTime(k);
-            float amp = bell.GetAmplitudeAt(standardListener, t, /*useDirectivity:*/ true);
+            float amp = bell.GetAmplitudeAt(standardListener, t, true); // directivity ON
+            if (amp > maxAmp) maxAmp = amp;
+        }
+
+        return Mathf.Max(maxAmp, 1e-6f);
+    }
+
+    private float SampleReferenceMaxAmplitudeHand()
+    {
+        bell.PrecomputeIfNeeded();
+
+        // 손은 "impactPos 바로 근처"에서 directivity=OFF 로 측정
+        Vector3 nearSource = strikerImpactPoint
+                            ? strikerImpactPoint.position
+                            : bell.BellCenter;
+
+        float maxAmp = 0f;
+        int steps = bell.Steps;
+        for (int k = 0; k < steps; k++)
+        {
+            float t = bell.StepToTime(k);
+            float amp = bell.GetAmplitudeAt(nearSource, t, false);  // directivity OFF
             if (amp > maxAmp) maxAmp = amp;
         }
 
