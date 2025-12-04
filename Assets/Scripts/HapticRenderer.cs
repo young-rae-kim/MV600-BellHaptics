@@ -200,6 +200,11 @@ public class HapticRenderer : MonoBehaviour
         }
     }
 
+    public void TriggerFromNetwork(int strength = 400)
+    {
+        HandleHit(strength);
+    }
+
     System.Collections.IEnumerator CoPlayOnAwake()
     {
         if (playOnAwakeDelay > 0f)
