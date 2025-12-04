@@ -454,7 +454,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   piezo: {fileID: 269262796}
-  flaskBaseUrl: http://192.168.0.22:5000
+  flaskBaseUrl: http://192.168.50.107:5000
 --- !u!1 &279304490
 GameObject:
   m_ObjectHideFlags: 0
@@ -1261,11 +1261,11 @@ MonoBehaviour:
   frameDrivenSend: 1
   minPacketMs: 100
   maxChunkMs: 150
-  playOnAwake: 1
+  playOnAwake: 0
   playOnAwakeDelay: 0
   playOnAwakeFixedGain: 1
   playOnAwakeStrength: 400
-  debugLogs: 0
+  debugLogs: 1
   logEveryNFrames: 1
   logActuatorDetails: 1
 --- !u!114 &820405619
@@ -1280,8 +1280,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8aa0127a4e4f49e4b91aecde9b412f3a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  serverURL: ws://192.168.0.108:5000/ws
+  serverURL: ws://192.168.50.107:5000/ws
   hapticRenderer: {fileID: 820405618}
+  bellBeatPlayer: {fileID: 1360437557}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

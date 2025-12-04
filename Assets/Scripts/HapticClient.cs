@@ -9,6 +9,7 @@ public class HapticClient : MonoBehaviour
 {
     public string serverURL = "ws://192.168.0.22:5000/ws";
     public HapticRenderer hapticRenderer;   // 🔹 Inspector에 HapticRenderer 넣기
+    public BellBeatPlayer bellBeatPlayer;   // 🔹 Inspector에 BellBeatPlayer 넣기
 
     private ClientWebSocket ws;
     private CancellationTokenSource cts;
@@ -107,6 +108,15 @@ public class HapticClient : MonoBehaviour
             else
             {
                 Debug.LogWarning("[PcHapticWsClient] hapticRenderer not assigned.");
+            }
+
+            if (bellBeatPlayer != null)
+            {
+                bellBeatPlayer.TriggerFromNetwork(400); // 사운드 세기도 필요하면 strength 연동
+            }
+            else
+            {
+                Debug.LogWarning("[PcHapticWsClient] bellBeatPlayer not assigned.");
             }
         }
     }

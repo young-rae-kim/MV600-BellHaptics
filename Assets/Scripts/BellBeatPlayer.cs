@@ -66,6 +66,11 @@ public class BellBeatPlayer : MonoBehaviour
         if (_src) _src.loop = false;
     }
 
+    public void TriggerFromNetwork(int strength = 400)
+    {
+        HandleHit(strength);
+    }
+
     void HandleHit(int strength)
     {
         // 히트 세기 → 게인(선택)
